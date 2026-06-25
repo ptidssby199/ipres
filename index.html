@@ -721,7 +721,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
       </div>
       <div class="menu-section-title">Tentang</div>
       <div class="menu-list">
-        <button class="menu-item" onclick="showToast('IDS-Abs v2.0.0')"><div class="mi-icon" style="background:var(--primary-light)"><i class="fas fa-info-circle" style="color:var(--primary)"></i></div><div><div class="mi-label">Tentang Aplikasi</div><div class="mi-desc">IDS-Abs v2.0.0</div></div><i class="fas fa-chevron-right mi-arrow"></i></button>
+        <button class="menu-item" onclick="showToast('IpresS v2.0.0')"><div class="mi-icon" style="background:var(--primary-light)"><i class="fas fa-info-circle" style="color:var(--primary)"></i></div><div><div class="mi-label">Tentang Aplikasi</div><div class="mi-desc">snapAbsen v2.0.0</div></div><i class="fas fa-chevron-right mi-arrow"></i></button>
       </div>
       <button class="btn-logout" onclick="doLogout()"><i class="fas fa-sign-out-alt"></i> Keluar dari Aplikasi</button>
     </div>
@@ -1227,7 +1227,7 @@ let jadwalUsers=[];
 
 // STATE
 let currentUser=null,cameraStream=null,capturedPhoto=null,currentLocation=null,locationOk=false;
-// Kode identitas IDS-Abs sebagai "mesin absen" untuk sync ke SQL Server (T_EmployeeAbsen).
+// Kode identitas snapAbsen sebagai "mesin absen" untuk sync ke SQL Server (T_EmployeeAbsen).
 // Saat ini hanya 1 lokasi kantor, jadi nilainya tetap. Jika nanti ada cabang baru,
 // ubah logic ini agar mengembalikan kode berbeda sesuai lokasi/radius yang dipakai.
 const CHECKIN_MACHINE_CODE='SB1';
@@ -1637,7 +1637,7 @@ async function doFingerprintVerif(){
     const cred=await navigator.credentials.create({
       publicKey:{
         challenge,
-        rp:{name:'IDS-Abs',id:rpId},
+        rp:{name:'snapAbsen',id:rpId},
         user:{id:userId,name:userName,displayName:userName},
         pubKeyCredParams:[
           {alg:-7,type:'public-key'},   // ES256
@@ -2502,7 +2502,7 @@ async function loadLaporan(silent=false){
       laporanJadwalMap[r.uid][r.date]=r;
     });
     // Sort absensi
-    laporanData=IDS-Abs.docs.map(d=>({id:d.id,...d.data()}))
+    laporanData=snapAbsen.docs.map(d=>({id:d.id,...d.data()}))
       .sort((a,b)=>{
         if(a.date!==b.date) return a.date>b.date?1:-1;
         return (a.time||'')>(b.time||'')?1:-1;
@@ -3060,7 +3060,7 @@ async function cariAlamat(){
   resultDiv.innerHTML='<div style="padding:10px 12px;color:#0369a1;font-size:.82rem"><i class="fas fa-spinner fa-spin" style="margin-right:6px"></i>Mencari alamat...</div>';
   try{
     const url='https://nominatim.openstreetmap.org/search?format=json&limit=5&addressdetails=1&q='+encodeURIComponent(q+', Indonesia');
-    const res=await fetch(url,{headers:{'Accept-Language':'id','User-Agent':'IDS-Abs/1.0'}});
+    const res=await fetch(url,{headers:{'Accept-Language':'id','User-Agent':'snapAbsen/1.0'}});
     const results=await res.json();
     if(!results.length){
       resultDiv.innerHTML='<div style="padding:10px 12px;color:#dc2626;font-size:.82rem"><i class="fas fa-times-circle" style="margin-right:6px"></i>Alamat tidak ditemukan. Coba perjelas nama jalan atau kota.</div>';
@@ -4650,7 +4650,7 @@ window.addEventListener('beforeinstallprompt', e => {
 window.addEventListener('appinstalled', () => {
   document.getElementById('pwa-install-banner').classList.remove('show');
   deferredPrompt = null;
-  showToast('IDS-Abs berhasil diinstall!', 'success');
+  showToast('IPres berhasil diinstall!', 'success');
 });
 
 async function installPWA() {
@@ -4662,7 +4662,7 @@ async function installPWA() {
   deferredPrompt.prompt();
   const { outcome } = await deferredPrompt.userChoice;
   deferredPrompt = null;
-  if (outcome === 'accepted') showToast('Menginstall IDS-Abs...', 'success');
+  if (outcome === 'accepted') showToast('Menginstall IPres...', 'success');
 }
 
 function dismissPWA() {
@@ -4690,7 +4690,7 @@ if (!navigator.onLine) document.getElementById('offline-bar').classList.add('sho
 <div id="pwa-install-banner">
   <div class="pwa-banner-icon">📋</div>
   <div class="pwa-banner-info">
-    <div class="pba-title">Install IDS-Abs</div>
+    <div class="pba-title">Install IPres</div>
     <div class="pba-sub">Akses lebih cepat tanpa browser</div>
   </div>
   <div class="pwa-banner-actions">
