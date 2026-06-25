@@ -1,7 +1,7 @@
 {
-  "name": "IPres — Aplikasi Absensi",
-  "short_name": "IPres",
-  "description": "Aplikasi Absensi Karyawan Modern dengan GPS dan Selfie",
+  "name": "IPresS — IDS Presence System",
+  "short_name": "IPresS",
+  "description": "IDS Presence System Modern dengan GPS dan Selfie",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#1a56db",
