@@ -2557,7 +2557,7 @@ function renderLaporanTable(data){
   const grouped={};
   filtered.forEach(r=>{
     const key=(r.uid||'x')+'|'+(r.date||'');
-    if(!grouped[key]) grouped[key]={uid:r.uid,name:r.userName||'—',date:r.date,masuk:'—',pulang:'—',lat:null,lng:null,photoMasuk:null,photoPulang:null,accMasuk:null,fakeScoreMasuk:0};
+    if(!grouped[key]) grouped[key]={uid:r.uid,name:r.userName||'—',date:r.date,masuk:'—',pulang:'—',lat:null,lng:null,photoMasuk:null,photoPulang:null,accMasuk:null,fakeScoreMasuk:0,latPulang:null,lngPulang:null,accPulang:null,fakeScorePulang:0,gpsWarnings:[],gpsWarningsPulang:[]};
     if(r.type==='masuk'){
       grouped[key].masuk=r.time;
       grouped[key].lat=r.lat; grouped[key].lng=r.lng;
@@ -2570,6 +2570,11 @@ function renderLaporanTable(data){
     if(r.type==='pulang'){
       grouped[key].pulang=r.time;
       grouped[key].photoPulang=r.photoURL||r.photoBase64||null;
+      grouped[key].latPulang=r.lat||null;
+      grouped[key].lngPulang=r.lng||null;
+      grouped[key].accPulang=r.accuracy||null;
+      grouped[key].fakeScorePulang=r.fakeGpsScore||0;
+      grouped[key].gpsWarningsPulang=r.gpsWarnings||[];
       grouped[key].docIdPulang=r.id;
     }
   });
@@ -4399,7 +4404,7 @@ function lihatDetail(btnOrUid, date, tab) {
   if (!currentDetailRows[key]) {
     laporanData.forEach(r => {
       const k = (r.uid||'x')+'|'+(r.date||'');
-      if (!currentDetailRows[k]) currentDetailRows[k] = {uid:r.uid,name:r.userName||'—',date:r.date,masuk:'—',pulang:'—',lat:null,lng:null,photoMasuk:null,photoPulang:null,accMasuk:null,fakeScoreMasuk:0,gpsWarnings:[]};
+    if(!currentDetailRows[k]) currentDetailRows[k] = {uid:r.uid,name:r.userName||'—',date:r.date,masuk:'—',pulang:'—',lat:null,lng:null,photoMasuk:null,photoPulang:null,accMasuk:null,fakeScoreMasuk:0,gpsWarnings:[],latPulang:null,lngPulang:null,accPulang:null,fakeScorePulang:0,gpsWarningsPulang:[]};
       if (r.type==='masuk') {
         currentDetailRows[k].masuk=r.time;
         currentDetailRows[k].lat=r.lat; currentDetailRows[k].lng=r.lng;
@@ -4411,6 +4416,11 @@ function lihatDetail(btnOrUid, date, tab) {
       if (r.type==='pulang') {
         currentDetailRows[k].pulang=r.time;
         currentDetailRows[k].photoPulang=r.photoURL||r.photoBase64||null;
+        currentDetailRows[k].latPulang=r.lat||null;
+        currentDetailRows[k].lngPulang=r.lng||null;
+        currentDetailRows[k].accPulang=r.accuracy||null;
+        currentDetailRows[k].fakeScorePulang=r.fakeGpsScore||0;
+        currentDetailRows[k].gpsWarningsPulang=r.gpsWarnings||[];
       }
     });
   }
@@ -4449,12 +4459,46 @@ function lihatDetail(btnOrUid, date, tab) {
     gpsTxt.innerHTML = '<i class="fas fa-check-circle" style="margin-right:5px"></i>Lokasi GPS valid';
   }
 
-  // Koordinat
+  // Koordinat masuk
   const coordEl = document.getElementById('rd-koordinat');
   if (row.lat && row.lng) {
     coordEl.innerHTML = '<a href="https://maps.google.com/?q='+row.lat+','+row.lng+'" target="_blank" style="color:var(--primary);text-decoration:none"><i class="fas fa-external-link-alt" style="margin-right:4px"></i>'+row.lat.toFixed(6)+', '+row.lng.toFixed(6)+'</a>';
   } else {
     coordEl.textContent = '—';
+  }
+
+  // Koordinat pulang
+  const coordPulangEl = document.getElementById('rd-koordinat-pulang');
+  if (coordPulangEl) {
+    if (row.latPulang && row.lngPulang) {
+      coordPulangEl.innerHTML = '<a href="https://maps.google.com/?q='+row.latPulang+','+row.lngPulang+'" target="_blank" style="color:var(--accent);text-decoration:none"><i class="fas fa-external-link-alt" style="margin-right:4px"></i>'+row.latPulang.toFixed(6)+', '+row.lngPulang.toFixed(6)+'</a>';
+    } else {
+      coordPulangEl.textContent = '—';
+    }
+  }
+
+  // Akurasi pulang
+  const accPulangEl = document.getElementById('rd-akurasi-pulang');
+  if (accPulangEl) accPulangEl.textContent = row.accPulang ? '±'+Math.round(row.accPulang)+'m' : '—';
+
+  // Fake GPS pulang
+  const fakePulangEl = document.getElementById('rd-fakescore-pulang');
+  if (fakePulangEl) {
+    const fp = row.fakeScorePulang || 0;
+    fakePulangEl.textContent = fp+'/10';
+    fakePulangEl.style.color = fp>=4 ? 'var(--red)' : fp>=2 ? 'var(--yellow)' : 'var(--green)';
+  }
+
+  // GPS warnings pulang
+  const warnPulangDiv = document.getElementById('rekap-gps-warnings-pulang');
+  const warnPulangList = document.getElementById('rekap-gps-warnings-pulang-list');
+  if (warnPulangDiv && warnPulangList) {
+    if (row.gpsWarningsPulang && row.gpsWarningsPulang.length) {
+      warnPulangDiv.style.display = 'block';
+      warnPulangList.innerHTML = row.gpsWarningsPulang.map(w=>'<div>• '+w+'</div>').join('');
+    } else {
+      warnPulangDiv.style.display = 'none';
+    }
   }
 
   // GPS warnings
@@ -4495,12 +4539,14 @@ function lihatDetail(btnOrUid, date, tab) {
   setTimeout(() => {
     const wrap = document.getElementById('rekap-map-detail-wrap');
     if (wrap) wrap.scrollIntoView({block:'nearest'});
-    initDetailMap(row.lat, row.lng, row.name, row.masuk);
+    initDetailMap(row.lat, row.lng, row.name, row.masuk, row.latPulang, row.lngPulang, row.pulang);
   }, 500);
 }
 
-function initDetailMap(lat, lng, name, time) {
-  if (!lat || !lng) {
+function initDetailMap(lat, lng, name, timeMasuk, latPulang, lngPulang, timePulang) {
+  const hasIn = lat && lng;
+  const hasOut = latPulang && lngPulang;
+  if (!hasIn && !hasOut) {
     document.getElementById('rekap-map-detail').innerHTML =
       '<div style="background:#f1f5f9;border-radius:10px;height:200px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:.85rem"><i class="fas fa-map-marker-alt" style="margin-right:6px"></i>Data lokasi tidak tersedia</div>';
     return;
@@ -4509,28 +4555,47 @@ function initDetailMap(lat, lng, name, time) {
     detailMapObj.remove();
     detailMapObj = null;
   }
-  // Pastikan container siap sebelum Leaflet init
   const mapContainer = document.getElementById('rekap-map-detail');
   const mapWrap = document.getElementById('rekap-map-detail-wrap');
   mapContainer.style.width = '100%';
   mapContainer.style.height = '220px';
   mapContainer.innerHTML = '';
   if (mapWrap) { mapWrap.style.height = '220px'; mapWrap.style.minHeight = '220px'; }
+
+  // Tentukan center peta
+  const centerLat = hasIn ? lat : latPulang;
+  const centerLng = hasIn ? lng : lngPulang;
+
   detailMapObj = L.map('rekap-map-detail', {zoomControl:true, attributionControl:true, preferCanvas:true});
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    subdomains: ['a','b','c'],
-    maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors'
+    subdomains: ['a','b','c'], maxZoom:19, attribution: '&copy; OpenStreetMap contributors'
   }).addTo(detailMapObj);
-  detailMapObj.setView([lat, lng], 17);
+  detailMapObj.setView([centerLat, centerLng], 17);
 
-  // Marker karyawan
-  const marker = L.circleMarker([lat, lng], {
-    radius:12, color:'#7c3aed', fillColor:'#7c3aed', fillOpacity:.8, weight:3
-  }).addTo(detailMapObj);
-  marker.bindPopup('<b>'+name+'</b><br>'+time).openPopup();
+  // Marker MASUK — hijau
+  if (hasIn) {
+    const markerIn = L.circleMarker([lat, lng], {
+      radius:12, color:'#16a34a', fillColor:'#16a34a', fillOpacity:.85, weight:3
+    }).addTo(detailMapObj);
+    markerIn.bindPopup('<b>🟢 Masuk: '+(timeMasuk||'—')+'</b><br>'+name);
+  }
 
-  // Lingkaran radius kantor jika ada
+  // Marker PULANG — oranye
+  if (hasOut) {
+    const markerOut = L.circleMarker([latPulang, lngPulang], {
+      radius:12, color:'#ea580c', fillColor:'#ea580c', fillOpacity:.85, weight:3
+    }).addTo(detailMapObj);
+    markerOut.bindPopup('<b>🟠 Pulang: '+(timePulang||'—')+'</b><br>'+name);
+  }
+
+  // Garis masuk → pulang jika keduanya ada
+  if (hasIn && hasOut) {
+    L.polyline([[lat,lng],[latPulang,lngPulang]], {
+      color:'#64748b', weight:2, dashArray:'6'
+    }).addTo(detailMapObj);
+  }
+
+  // Lingkaran radius & marker kantor
   if (officeConfig) {
     L.circle([officeConfig.lat, officeConfig.lng], {
       radius: officeConfig.radius, color:'#0891b2',
@@ -4540,16 +4605,24 @@ function initDetailMap(lat, lng, name, time) {
       radius:8, color:'#0891b2', fillColor:'#0891b2', fillOpacity:1
     }).addTo(detailMapObj).bindPopup('<b>📍 '+(officeConfig.nama||'Kantor')+'</b>');
 
-    // Garis dari karyawan ke kantor
-    const dist = getDistance(lat, lng, officeConfig.lat, officeConfig.lng);
-    L.polyline([[lat,lng],[officeConfig.lat,officeConfig.lng]], {
-      color:'#94a3b8', weight:2, dashArray:'5'
-    }).addTo(detailMapObj).bindPopup('Jarak: '+Math.round(dist)+' m');
+    // Garis masuk ke kantor
+    if (hasIn) {
+      const dist = getDistance(lat, lng, officeConfig.lat, officeConfig.lng);
+      L.polyline([[lat,lng],[officeConfig.lat,officeConfig.lng]], {
+        color:'#94a3b8', weight:2, dashArray:'5'
+      }).addTo(detailMapObj).bindPopup('Jarak masuk: '+Math.round(dist)+' m');
+    }
   }
-  // Force invalidateSize agresif - penting karena ada di dalam overflow scroll container
+
+  // Auto-fit bounds jika ada dua titik
+  if (hasIn && hasOut) {
+    const bounds = L.latLngBounds([[lat,lng],[latPulang,lngPulang]]);
+    detailMapObj.fitBounds(bounds.pad(0.4));
+  }
+
   detailMapObj.whenReady(() => {
     detailMapObj.invalidateSize();
-    setTimeout(() => { if(detailMapObj) { detailMapObj.invalidateSize(); detailMapObj.setView([lat,lng],17); }}, 200);
+    setTimeout(() => { if(detailMapObj) { detailMapObj.invalidateSize(); }}, 200);
     setTimeout(() => { if(detailMapObj) detailMapObj.invalidateSize(); }, 600);
     setTimeout(() => { if(detailMapObj) detailMapObj.invalidateSize(); }, 1200);
   });
@@ -4782,12 +4855,31 @@ if (!navigator.onLine) document.getElementById('offline-bar').classList.add('sho
         </div>
       </div>
       <!-- Koordinat -->
-      <div class="rekap-info-item" style="margin-bottom:14px">
-        <div class="ri-label">Koordinat Lokasi Masuk</div>
+      <div class="rekap-info-item" style="margin-bottom:8px">
+        <div class="ri-label">📍 Koordinat Lokasi Masuk</div>
         <div class="ri-val" id="rd-koordinat" style="font-size:.78rem;word-break:break-all">—</div>
       </div>
+      <div class="rekap-info-item" style="margin-bottom:14px">
+        <div class="ri-label">📍 Koordinat Lokasi Pulang</div>
+        <div class="ri-val" id="rd-koordinat-pulang" style="font-size:.78rem;word-break:break-all">—</div>
+      </div>
+      <!-- Info GPS Pulang -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+        <div class="rekap-info-item">
+          <div class="ri-label">Akurasi GPS Pulang</div>
+          <div class="ri-val" id="rd-akurasi-pulang">—</div>
+        </div>
+        <div class="rekap-info-item">
+          <div class="ri-label">Skor GPS Pulang</div>
+          <div class="ri-val" id="rd-fakescore-pulang">—</div>
+        </div>
+      </div>
       <!-- Peta lokasi -->
-      <div style="font-size:.78rem;font-weight:700;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.3px">📍 Lokasi Absen</div>
+      <div style="font-size:.78rem;font-weight:700;color:var(--text-muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px">🗺️ Peta Lokasi Absen</div>
+      <div style="font-size:.72rem;color:var(--text-muted);margin-bottom:6px">
+        <span style="display:inline-flex;align-items:center;gap:4px;margin-right:10px"><span style="width:10px;height:10px;border-radius:50%;background:#16a34a;display:inline-block"></span>Masuk</span>
+        <span style="display:inline-flex;align-items:center;gap:4px"><span style="width:10px;height:10px;border-radius:50%;background:#ea580c;display:inline-block"></span>Pulang</span>
+      </div>
       <div id="rekap-map-detail-wrap" style="width:100%;height:220px;min-height:220px;border-radius:10px;overflow:hidden;border:2px solid var(--border);margin-bottom:14px;background:#f1f5f9;position:relative;z-index:1">
         <div id="rekap-map-detail" style="width:100%;height:220px;position:absolute;top:0;left:0"></div>
       </div>
@@ -4801,10 +4893,15 @@ if (!navigator.onLine) document.getElementById('offline-bar').classList.add('sho
       <div class="rekap-foto-preview" id="rekap-foto-pulang">
         <div class="no-foto"><i class="fas fa-camera" style="font-size:2rem;display:block;margin-bottom:8px;opacity:.4"></i>Foto tidak tersedia</div>
       </div>
-      <!-- Peringatan GPS -->
+      <!-- Peringatan GPS Masuk -->
       <div id="rekap-gps-warnings" style="display:none;background:var(--red-light);border-radius:8px;padding:10px 12px;margin-top:10px;font-size:.78rem;color:var(--red)">
-        <div style="font-weight:700;margin-bottom:4px"><i class="fas fa-exclamation-triangle" style="margin-right:5px"></i>Peringatan GPS</div>
+        <div style="font-weight:700;margin-bottom:4px"><i class="fas fa-exclamation-triangle" style="margin-right:5px"></i>Peringatan GPS Masuk</div>
         <div id="rekap-gps-warnings-list"></div>
+      </div>
+      <!-- Peringatan GPS Pulang -->
+      <div id="rekap-gps-warnings-pulang" style="display:none;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px 12px;margin-top:8px;font-size:.78rem;color:#ea580c">
+        <div style="font-weight:700;margin-bottom:4px"><i class="fas fa-exclamation-triangle" style="margin-right:5px"></i>Peringatan GPS Pulang</div>
+        <div id="rekap-gps-warnings-pulang-list"></div>
       </div>
     </div>
   </div>
