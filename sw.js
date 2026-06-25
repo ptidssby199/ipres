@@ -1,6 +1,6 @@
-// IDS-Abs Service Worker v1.0.1
-const CACHE_NAME = 'IPres-v3';
-const ASSETS_CACHE = 'IPres-assets-v3';
+// IPresS Service Worker v1.0.1
+const CACHE_NAME = 'IPresS-v9';
+const ASSETS_CACHE = 'IPresS-assets-v9';
 
 // File lokal yang di-cache
 const STATIC_ASSETS = [
