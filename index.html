@@ -1482,18 +1482,22 @@ async function loadMyAbsensiToday(){
   if(!firebaseDb||!currentUser)return;
   const today=getLocalDateStr();
   try{
-    const snap=await firebaseDb.collection('absensi').where('uid','==',currentUser.uid).where('date','==',today).get();
+    // Hanya 1 where clause → tidak butuh index
+    const snap=await firebaseDb.collection('absensi').where('uid','==',currentUser.uid).get();
+    // Filter tanggal hari ini di JS
+    const todayDocs=snap.docs.map(d=>d.data()).filter(d=>d.date===today);
     const c=document.getElementById('activity-list');
-    if(snap.empty){c.innerHTML='<div class="empty-state"><i class="fas fa-inbox"></i><p>Belum ada aktivitas hari ini</p></div>';return;}
-    // Sort by time client-side
-    const actDocs=snap.docs.map(d=>d.data()).sort((a,b)=>(a.time||'')>(b.time||'')?1:-1);
+    if(!todayDocs.length){c.innerHTML='<div class="empty-state"><i class="fas fa-inbox"></i><p>Belum ada aktivitas hari ini</p></div>';return;}
+    const actDocs=todayDocs.sort((a,b)=>(a.time||'')>(b.time||'')?1:-1);
     c.innerHTML=actDocs.map(r=>{return`<div class="activity-item"><div class="activity-dot" style="background:${r.type==='masuk'?'#16a34a':'#f97316'}"></div><div class="activity-info"><div class="a-title">${r.type==='masuk'?'Absen Masuk':'Absen Pulang'}</div><div class="a-sub"><i class="fas fa-clock" style="font-size:.7rem"></i> ${r.time}</div></div><div class="activity-time">${r.lat?(r.lat.toFixed(4)+','+r.lng.toFixed(4)):'—'}</div></div>`;}).join('');
     actDocs.forEach(r=>{if(r.type==='masuk'){document.getElementById('stat-masuk').textContent=r.time;document.getElementById('today-status').textContent='Sudah Absen Masuk ✓';}if(r.type==='pulang'){document.getElementById('stat-pulang').textContent=r.time;document.getElementById('today-status').textContent='Sudah Absen Pulang ✓';}});
+    // Hitung hadir bulan ini dari data yang sudah diambil (filter di JS)
     const m=new Date().getMonth()+1,y=new Date().getFullYear();
     const start=`${y}-${String(m).padStart(2,'0')}-01`,end=`${y}-${String(m).padStart(2,'0')}-31`;
-    const snap2=await firebaseDb.collection('absensi').where('uid','==',currentUser.uid).where('type','==','masuk').where('date','>=',start).where('date','<=',end).get();
-    document.getElementById('stat-hadir-bln').textContent=snap2.size;
-    document.getElementById('ps-hadir').textContent=snap2.size;
+    const hadirBln=snap.docs.map(d=>d.data()).filter(d=>d.type==='masuk'&&d.date>=start&&d.date<=end);
+    const hadirCount=new Set(hadirBln.map(d=>d.date)).size;
+    document.getElementById('stat-hadir-bln').textContent=hadirCount;
+    document.getElementById('ps-hadir').textContent=hadirCount;
   }catch(e){console.error(e);}
 }
 async function loadMyAbsensiHistory(){
@@ -2691,14 +2695,15 @@ async function submitAbsen(type){
         dBatas.setDate(dBatas.getDate() - 3);
         const batasStr = getLocalDateStr(dBatas);
 
-        // Satu query sederhana — tidak butuh composite index
+        // HANYA 1 where clause (uid==) → tidak butuh index apapun
+        // Filter tanggal dilakukan di JavaScript
         const snapRecent = await firebaseDb.collection('absensi')
           .where('uid','==', currentUser.uid)
-          .where('date','>=', batasStr)
           .get();
 
-        // Filter & kelompokkan di sisi client
-        const docsAll = snapRecent.docs.map(d => d.data());
+        // Filter 3 hari terakhir + kelompokkan di sisi client
+        const docsAll = snapRecent.docs.map(d => d.data())
+          .filter(d => d.date && d.date >= batasStr);
         const masukDocs = docsAll
           .filter(d => d.type === 'masuk')
           .sort((a,b) => a.date > b.date ? -1 : a.date < b.date ? 1 : (a.time||'') > (b.time||'') ? -1 : 1);
@@ -4792,10 +4797,10 @@ loadProfileStats = async function() {
   const start = `${y}-${m}-01`, end = `${y}-${m}-31`;
   try {
     const snapMasukAll2 = await firebaseDb.collection('absensi')
-      .where('uid','==',currentUser.uid).where('type','==','masuk').get();
+      .where('uid','==',currentUser.uid).get();
     const snapMasukDocs2 = snapMasukAll2.docs.filter(d=>{
-      const dt=d.data().date;
-      return dt && dt>=start && dt<=end;
+      const r=d.data();
+      return r.type==='masuk' && r.date && r.date>=start && r.date<=end;
     });
     if (snapMasukDocs2.length && allShifts.length) {
       // Hitung telat berdasarkan jadwal masing-masing hari
@@ -4836,15 +4841,12 @@ async function loadProfileStats(){
   if(labelBulanEl) labelBulanEl.textContent=`Statistik ${namaBulanList[now.getMonth()]} ${y}`;
   try{
     // Hitung hadir bulan ini (jumlah hari unik yang ada absen masuk)
-    // Catatan: filter tanggal dilakukan di JS (bukan di query) agar tidak perlu composite index Firestore
+    // Hanya 1 where clause → tidak butuh composite index Firestore
     const snapMasukAll=await firebaseDb.collection('absensi')
       .where('uid','==',currentUser.uid)
-      .where('type','==','masuk')
       .get();
-    const snapMasukDocs=snapMasukAll.docs.filter(d=>{
-      const dt=d.data().date;
-      return dt && dt>=start && dt<=end;
-    });
+    const allAbsenDocs=snapMasukAll.docs.map(d=>d.data());
+    const snapMasukDocs=allAbsenDocs.filter(d=>d.type==='masuk'&&d.date&&d.date>=start&&d.date<=end);
     const hadirDays=new Set(snapMasukDocs.map(d=>d.data().date)).size;
     document.getElementById('ps-hadir').textContent=hadirDays;
     document.getElementById('stat-hadir-bln').textContent=hadirDays;
