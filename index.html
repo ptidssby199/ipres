@@ -18,6 +18,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Syne:wght@700;800&display=swap" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/dist/face-api.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
@@ -478,6 +479,32 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 .empty-state{text-align:center;padding:40px 20px;color:var(--text-muted);}
 .empty-state i{font-size:2.5rem;margin-bottom:12px;opacity:.4;display:block;}
 .empty-state p{font-size:.88rem;}
+
+/* ===== FACE VERIFICATION ===== */
+.face-verify-status{padding:10px 14px;border-radius:10px;font-size:.82rem;font-weight:700;display:flex;align-items:center;gap:8px;margin-bottom:10px;transition:all .3s;}
+.fvs-loading{background:#eff6ff;color:#1d4ed8;border:1.5px solid #bfdbfe;}
+.fvs-success{background:var(--green-light);color:var(--green);border:1.5px solid #bbf7d0;}
+.fvs-fail{background:var(--red-light);color:var(--red);border:1.5px solid #fecaca;}
+.fvs-warn{background:var(--yellow-light);color:var(--yellow);border:1.5px solid #fde68a;}
+.fvs-noref{background:#f5f3ff;color:#7c3aed;border:1.5px solid #ddd6fe;}
+.face-match-bar-wrap{height:8px;background:#e2e8f0;border-radius:99px;overflow:hidden;margin:6px 0 2px;}
+.face-match-bar{height:100%;border-radius:99px;transition:width .5s ease,background .3s;}
+.btn-u-face{padding:5px 8px;border-radius:6px;border:1.5px solid #0891b2;background:#e0f2fe;color:#0891b2;font-size:.68rem;font-weight:700;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;white-space:nowrap;display:inline-flex;align-items:center;gap:4px;}
+.btn-u-face:hover{background:#0891b2;color:#fff;}
+.btn-u-face.has-ref{border-color:var(--green);background:var(--green-light);color:var(--green);}
+.btn-u-face.has-ref:hover{background:var(--green);color:#fff;}
+/* Modal face enrollment */
+#modal-face-enroll{display:none;position:fixed;inset:0;z-index:520;background:rgba(0,0,0,.7);backdrop-filter:blur(6px);align-items:center;justify-content:center;padding:16px;}
+#modal-face-enroll.open{display:flex;}
+.face-enroll-box{background:var(--card);border-radius:20px;width:100%;max-width:420px;max-height:92vh;overflow-y:auto;animation:fadeScale .25s ease;}
+.face-enroll-hdr{background:linear-gradient(135deg,#0369a1,#0891b2);padding:18px 20px;border-radius:20px 20px 0 0;display:flex;justify-content:space-between;align-items:center;color:#fff;}
+.face-enroll-hdr h3{font-size:.95rem;font-weight:700;}
+.face-enroll-body{padding:18px;}
+.face-ref-preview{width:100%;aspect-ratio:1/1;border-radius:12px;overflow:hidden;background:#0f172a;display:flex;align-items:center;justify-content:center;margin-bottom:12px;position:relative;border:2px solid var(--border);}
+.face-ref-preview img{width:100%;height:100%;object-fit:cover;}
+.face-ref-preview .fref-empty{color:rgba(255,255,255,.4);text-align:center;font-size:.82rem;}
+.face-detected-badge{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);background:var(--green);color:#fff;font-size:.72rem;font-weight:700;padding:4px 12px;border-radius:99px;white-space:nowrap;}
+.face-detect-fail-badge{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);background:var(--red);color:#fff;font-size:.72rem;font-weight:700;padding:4px 12px;border-radius:99px;white-space:nowrap;}
 </style>
 </head>
 <body>
@@ -1062,6 +1089,12 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
       </div>
       <!-- Status verifikasi -->
       <div id="verif-status" style="display:none;text-align:center;padding:12px;border-radius:10px;margin-bottom:12px;font-weight:700;font-size:.9rem"></div>
+      <!-- Face verification result -->
+      <div id="face-verif-result" style="display:none;margin-bottom:12px">
+        <div class="face-verify-status fvs-loading" id="face-verif-msg"><i class="fas fa-spinner fa-spin"></i> Memverifikasi wajah...</div>
+        <div class="face-match-bar-wrap"><div class="face-match-bar" id="face-match-bar" style="width:0;background:var(--primary)"></div></div>
+        <div style="display:flex;justify-content:space-between;font-size:.68rem;color:var(--text-muted)"><span>Kecocokan wajah</span><span id="face-match-pct">0%</span></div>
+      </div>
       <!-- Submit button -->
       <div style="padding:0 0 16px">
         <button class="btn-masuk" id="btn-submit-absen" onclick="doSubmitAbsen()" disabled style="width:100%;margin-bottom:8px;justify-content:center;opacity:.5"><i class="fas fa-paper-plane"></i> <span id="btn-submit-label">Submit Absen</span></button>
@@ -1556,6 +1589,8 @@ function closeAbsenModal(){
   if(cameraStream){cameraStream.getTracks().forEach(t=>t.stop());cameraStream=null;}
   resetCameraUI();capturedPhoto=null;currentLocation=null;locationOk=false;selectedAbsenType=null;verifMethod=null;verifDone=false;
   selectedCabangData=null;
+  window._faceWarnFlag=false;window._faceWarnSimilarity=null;
+  const fvr=document.getElementById('face-verif-result');if(fvr)fvr.style.display='none';
 }
 function goToStep(n){
   document.querySelectorAll('.absen-step-content').forEach(s=>s.classList.remove('active'));
@@ -2141,16 +2176,429 @@ function capturePhoto(){
   capturedPhoto=c.toDataURL('image/jpeg',.65);c.style.display='block';v.style.display='none';
   document.getElementById('cam-overlay').style.display='none';document.getElementById('cam-taken-badge').style.display='block';
   if(cameraStream){cameraStream.getTracks().forEach(t=>t.stop());cameraStream=null;}
-  // Jika di step verifikasi selfie, enable submit button
+  // Jika di step verifikasi selfie, jalankan face verification
   const step3Active=document.getElementById('step-3').classList.contains('active');
   if(step3Active){
-    verifMethod='selfie';verifDone=true;
-    showVerifStatus('success','✅ Foto selfie berhasil diambil!');
-    const btnSubmit=document.getElementById('btn-submit-absen');
-    btnSubmit.disabled=false;btnSubmit.style.opacity='1';
-    btnSubmit.style.background='#16a34a';
+    verifMethod='selfie';
+    showToast('Foto diambil, memverifikasi wajah...','info');
+    runFaceVerification(c);
   }
-  showToast('Foto berhasil diambil!','success');
+}
+
+// ============================================================
+// FACE VERIFICATION — face-api.js
+// ============================================================
+let faceApiReady = false;
+let faceApiLoading = false;
+
+const FACE_API_MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.13/model';
+const FACE_MATCH_THRESHOLD = 0.50; // Jarak maksimum (lebih kecil = lebih ketat). 0.50 = cukup ketat
+
+async function loadFaceApiModels(){
+  if(faceApiReady) return true;
+  if(faceApiLoading) {
+    // tunggu loading selesai
+    for(let i=0;i<30;i++){
+      await new Promise(r=>setTimeout(r,500));
+      if(faceApiReady) return true;
+    }
+    return false;
+  }
+  faceApiLoading = true;
+  try{
+    if(typeof faceapi === 'undefined') throw new Error('face-api.js tidak termuat');
+    await Promise.all([
+      faceapi.nets.tinyFaceDetector.loadFromUri(FACE_API_MODEL_URL),
+      faceapi.nets.faceLandmark68TinyNet.loadFromUri(FACE_API_MODEL_URL),
+      faceapi.nets.faceRecognitionNet.loadFromUri(FACE_API_MODEL_URL),
+    ]);
+    faceApiReady = true;
+    faceApiLoading = false;
+    console.log('[FaceAPI] Models loaded OK');
+    return true;
+  }catch(e){
+    faceApiLoading = false;
+    console.error('[FaceAPI] Model load error:', e);
+    return false;
+  }
+}
+
+// Preload saat halaman idle agar tidak delay saat absen
+(function preloadFaceApi(){
+  if(document.readyState === 'complete'){
+    setTimeout(loadFaceApiModels, 3000);
+  } else {
+    window.addEventListener('load', ()=> setTimeout(loadFaceApiModels, 3000));
+  }
+})();
+
+async function getFaceDescriptor(imgEl){
+  const options = new faceapi.TinyFaceDetectorOptions({ inputSize:320, scoreThreshold:0.4 });
+  const result = await faceapi
+    .detectSingleFace(imgEl, options)
+    .withFaceLandmarks(true)
+    .withFaceDescriptor();
+  return result ? result.descriptor : null;
+}
+
+async function runFaceVerification(canvasEl){
+  const fvResult = document.getElementById('face-verif-result');
+  const fvMsg    = document.getElementById('face-verif-msg');
+  const fvBar    = document.getElementById('face-match-bar');
+  const fvPct    = document.getElementById('face-match-pct');
+  const btnSubmit= document.getElementById('btn-submit-absen');
+
+  fvResult.style.display = 'block';
+  fvMsg.className = 'face-verify-status fvs-loading';
+  fvMsg.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Memuat model AI wajah...';
+  fvBar.style.width = '0';
+  fvPct.textContent = '—';
+  btnSubmit.disabled = true;
+  btnSubmit.style.opacity = '.5';
+  verifDone = false;
+
+  try{
+    // 1. Pastikan model termuat
+    const ready = await loadFaceApiModels();
+    if(!ready){
+      // Model gagal muat — lewati verifikasi wajah (jangan blokir absen)
+      _faceVerifSkip('Model AI tidak tersedia. Selfie disimpan tanpa verifikasi wajah.');
+      return;
+    }
+    document.getElementById('face-enroll-model-note')&&(document.getElementById('face-enroll-model-note').innerHTML='<i class="fas fa-check-circle" style="color:var(--green);margin-right:4px"></i>Model AI siap');
+
+    fvMsg.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Mendeteksi wajah di selfie...';
+
+    // 2. Ambil descriptor dari selfie
+    const selfieDesc = await getFaceDescriptor(canvasEl);
+    if(!selfieDesc){
+      fvMsg.className = 'face-verify-status fvs-fail';
+      fvMsg.innerHTML = '<i class="fas fa-times-circle"></i> Wajah tidak terdeteksi di foto selfie. Coba ambil foto lagi dengan pencahayaan lebih terang.';
+      showVerifStatus('error','❌ Wajah tidak terdeteksi. Ambil ulang selfie.');
+      return;
+    }
+
+    // 3. Ambil descriptor referensi dari Firestore
+    fvMsg.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Mengambil data referensi wajah...';
+    if(!firebaseDb || !currentUser?.uid){
+      _faceVerifSkip('Tidak dapat mengambil data referensi. Selfie disimpan tanpa verifikasi wajah.');
+      return;
+    }
+    const userDoc = await firebaseDb.collection('users').doc(currentUser.uid).get();
+    const userData = userDoc.data();
+    if(!userData?.faceDescriptor){
+      _faceVerifSkip('Foto referensi wajah belum diatur oleh admin. Hubungi admin untuk mendaftarkan wajah Anda.');
+      return;
+    }
+
+    // 4. Bandingkan descriptor
+    fvMsg.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Membandingkan wajah...';
+    const refDescArr = new Float32Array(Object.values(userData.faceDescriptor));
+    const distance = faceapi.euclideanDistance(selfieDesc, refDescArr);
+    const similarity = Math.max(0, Math.min(100, Math.round((1 - distance) * 100)));
+    const pct = similarity + '%';
+    fvBar.style.width = pct;
+    fvPct.textContent = pct;
+
+    if(distance <= FACE_MATCH_THRESHOLD){
+      // COCOK
+      fvBar.style.background = 'var(--green)';
+      fvMsg.className = 'face-verify-status fvs-success';
+      fvMsg.innerHTML = `<i class="fas fa-check-circle"></i> Wajah terverifikasi! Kecocokan ${similarity}%`;
+      showVerifStatus('success', `✅ Wajah terverifikasi (${similarity}% cocok)`);
+      verifDone = true;
+      btnSubmit.disabled = false;
+      btnSubmit.style.opacity = '1';
+      btnSubmit.style.background = 'var(--green)';
+    } else if(distance <= FACE_MATCH_THRESHOLD + 0.15){
+      // RAGU-RAGU — biarkan absen tapi beri peringatan
+      fvBar.style.background = 'var(--yellow)';
+      fvMsg.className = 'face-verify-status fvs-warn';
+      fvMsg.innerHTML = `<i class="fas fa-exclamation-circle"></i> Wajah kurang cocok (${similarity}%). Foto dicatat untuk review admin.`;
+      showVerifStatus('warning', `⚠️ Kecocokan wajah rendah (${similarity}%). Absen tercatat dengan tanda peringatan.`);
+      verifDone = true; // tetap bisa submit, tapi ditandai
+      capturedPhoto = capturedPhoto; // simpan foto
+      btnSubmit.disabled = false;
+      btnSubmit.style.opacity = '1';
+      btnSubmit.style.background = 'var(--yellow)';
+      // Tandai untuk review
+      window._faceWarnFlag = true;
+      window._faceWarnSimilarity = similarity;
+    } else {
+      // TIDAK COCOK — blokir
+      fvBar.style.background = 'var(--red)';
+      fvMsg.className = 'face-verify-status fvs-fail';
+      fvMsg.innerHTML = `<i class="fas fa-times-circle"></i> Wajah TIDAK cocok (${similarity}%). Absen ditolak. Pastikan Anda yang melakukan absen sendiri.`;
+      showVerifStatus('error', `❌ Wajah tidak cocok (${similarity}%). Absen ditolak!`);
+      verifDone = false;
+      btnSubmit.disabled = true;
+      btnSubmit.style.opacity = '.5';
+      // Log pelanggaran ke Firestore
+      if(firebaseDb && currentUser){
+        firebaseDb.collection('face_violations').add({
+          uid: currentUser.uid,
+          userName: currentUser.name,
+          similarity,
+          distance: distance.toFixed(4),
+          timestamp: firebase.firestore.FieldValue.serverTimestamp()
+        }).catch(()=>{});
+      }
+    }
+  }catch(e){
+    console.error('[FaceVerif] Error:', e);
+    _faceVerifSkip('Verifikasi wajah gagal: ' + (e.message||'unknown error') + '. Absen dilanjutkan tanpa verifikasi wajah.');
+  }
+}
+
+function _faceVerifSkip(msg){
+  const fvResult = document.getElementById('face-verif-result');
+  const fvMsg    = document.getElementById('face-verif-msg');
+  const btnSubmit= document.getElementById('btn-submit-absen');
+  fvResult.style.display = 'block';
+  fvMsg.className = 'face-verify-status fvs-noref';
+  fvMsg.innerHTML = '<i class="fas fa-circle-info"></i> ' + msg;
+  showVerifStatus('warning', '⚠️ ' + msg);
+  // Izinkan absen tetap bisa dilakukan (foto tetap tersimpan)
+  verifDone = true;
+  btnSubmit.disabled = false;
+  btnSubmit.style.opacity = '1';
+  btnSubmit.style.background = 'var(--yellow)';
+}
+
+// ============================================================
+// FACE ENROLLMENT — Admin Panel
+// ============================================================
+let faceEnrollUid = null;
+let faceEnrollDescriptor = null;
+let faceEnrollPhotoData = null;
+
+async function openFaceEnroll(uid, name){
+  if(!hasRole('admin')){ showToast('Akses ditolak — hanya Admin','error'); return; }
+  faceEnrollUid = uid;
+  faceEnrollDescriptor = null;
+  faceEnrollPhotoData = null;
+
+  document.getElementById('face-enroll-username').textContent = name + ' — Foto Referensi Wajah';
+  document.getElementById('face-ref-img').style.display = 'none';
+  document.getElementById('fref-empty-msg').style.display = 'block';
+  document.getElementById('face-ref-canvas').style.display = 'none';
+  document.getElementById('face-enroll-info').style.display = 'none';
+  document.getElementById('face-enroll-fail').style.display = 'none';
+  document.getElementById('face-detect-status').style.display = 'none';
+  document.getElementById('btn-save-face-ref').disabled = true;
+  document.getElementById('btn-save-face-ref').style.opacity = '.5';
+  document.getElementById('face-ref-file-input').value = '';
+  document.getElementById('face-ref-camera-input').value = '';
+
+  const modal = document.getElementById('modal-face-enroll');
+  modal.style.display = '';
+  modal.classList.add('open');
+
+  // Cek apakah sudah ada foto referensi
+  if(firebaseDb){
+    try{
+      const doc = await firebaseDb.collection('users').doc(uid).get();
+      const data = doc.data();
+      if(data?.faceRef){
+        document.getElementById('face-ref-img').src = data.faceRef;
+        document.getElementById('face-ref-img').style.display = 'block';
+        document.getElementById('fref-empty-msg').style.display = 'none';
+        const ds = document.getElementById('face-detect-status');
+        ds.style.display = 'block';
+        ds.style.background = '#f0fdf4'; ds.style.color = '#15803d';
+        ds.innerHTML = '<i class="fas fa-check-circle" style="margin-right:5px"></i>Foto referensi sudah ada. Upload baru untuk mengganti.';
+      }
+    }catch(e){ console.error(e); }
+  }
+
+  // Preload model di background
+  const note = document.getElementById('face-enroll-model-note');
+  if(faceApiReady){
+    note.innerHTML = '<i class="fas fa-check-circle" style="color:var(--green);margin-right:4px"></i>Model AI siap';
+  } else {
+    note.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right:4px"></i>Memuat model AI wajah... (±5 MB, sekali saja)';
+    loadFaceApiModels().then(ok=>{
+      note.innerHTML = ok
+        ? '<i class="fas fa-check-circle" style="color:var(--green);margin-right:4px"></i>Model AI siap'
+        : '<i class="fas fa-exclamation-circle" style="color:var(--red);margin-right:4px"></i>Model AI gagal dimuat. Coba refresh halaman.';
+    });
+  }
+}
+
+function closeFaceEnroll(){
+  document.getElementById('modal-face-enroll').classList.remove('open');
+  faceEnrollUid = null;
+  faceEnrollDescriptor = null;
+  faceEnrollPhotoData = null;
+}
+
+async function handleFaceRefUpload(input){
+  const file = input.files[0];
+  if(!file) return;
+  if(!file.type.startsWith('image/')){ showToast('File harus berupa gambar','error'); return; }
+
+  const ds = document.getElementById('face-detect-status');
+  ds.style.display = 'block';
+  ds.style.background = '#eff6ff'; ds.style.color = '#1d4ed8';
+  ds.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right:5px"></i>Memproses foto...';
+
+  document.getElementById('face-enroll-info').style.display = 'none';
+  document.getElementById('face-enroll-fail').style.display = 'none';
+  document.getElementById('btn-save-face-ref').disabled = true;
+  document.getElementById('btn-save-face-ref').style.opacity = '.5';
+  faceEnrollDescriptor = null;
+  faceEnrollPhotoData = null;
+
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const rawDataUrl = e.target.result;
+
+    // ── LANGKAH 1: Resize foto ke max 320px untuk deteksi wajah ──────
+    // Foto asli (bisa > 2MB) TIDAK pernah disimpan. Kita kerja dengan
+    // versi kecil sejak awal agar tidak ada resiko overflow Firestore.
+    const workingImg = await _resizeForDetection(rawDataUrl, 320);
+
+    // Tampilkan preview (pakai versi kecil)
+    const imgEl = document.getElementById('face-ref-img');
+    imgEl.src = workingImg;
+    imgEl.style.display = 'block';
+    document.getElementById('fref-empty-msg').style.display = 'none';
+
+    imgEl.onload = async () => {
+      // ── LANGKAH 2: Buat thumbnail 80x80 untuk preview di Firestore ──
+      // Ini yang akan disimpan ke field faceRef (bukan foto asli)
+      const thumb = await _makeThumb(workingImg, 80, 80);
+      faceEnrollPhotoData = thumb; // SELALU thumbnail kecil, bukan foto asli
+
+      // ── LANGKAH 3: Pastikan model AI siap ───────────────────────────
+      const ready = await loadFaceApiModels();
+      if(!ready){
+        ds.style.background = '#fef9c3'; ds.style.color = '#92400e';
+        ds.innerHTML = '<i class="fas fa-exclamation-circle" style="margin-right:5px"></i>Model AI tidak tersedia. Simpan foto saja (tanpa verifikasi otomatis).';
+        document.getElementById('btn-save-face-ref').disabled = false;
+        document.getElementById('btn-save-face-ref').style.opacity = '1';
+        return;
+      }
+
+      ds.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right:5px"></i>Mendeteksi wajah...';
+
+      // ── LANGKAH 4: Ekstrak descriptor dari gambar kerja ─────────────
+      try{
+        const descriptor = await getFaceDescriptor(imgEl);
+        if(descriptor){
+          faceEnrollDescriptor = descriptor;
+          ds.style.background = '#f0fdf4'; ds.style.color = '#15803d';
+          ds.innerHTML = '<i class="fas fa-check-circle" style="margin-right:5px"></i>Wajah terdeteksi! Siap disimpan.';
+          document.getElementById('face-enroll-info').style.display = 'block';
+          document.getElementById('face-enroll-info-detail').textContent =
+            'Descriptor wajah (128 dimensi) berhasil diekstrak dan siap disimpan.';
+          document.getElementById('btn-save-face-ref').disabled = false;
+          document.getElementById('btn-save-face-ref').style.opacity = '1';
+        } else {
+          ds.style.background = 'var(--red-light)'; ds.style.color = 'var(--red)';
+          ds.innerHTML = '<i class="fas fa-times-circle" style="margin-right:5px"></i>Wajah tidak terdeteksi.';
+          document.getElementById('face-enroll-fail').style.display = 'block';
+        }
+      }catch(err){
+        ds.style.background = 'var(--red-light)'; ds.style.color = 'var(--red)';
+        ds.innerHTML = '<i class="fas fa-times-circle" style="margin-right:5px"></i>Error: ' + err.message;
+      }
+    };
+  };
+  reader.readAsDataURL(file);
+}
+
+// Resize foto ke max dimensi untuk keperluan deteksi wajah
+function _resizeForDetection(dataUrl, maxDim){
+  return new Promise(resolve=>{
+    const img = new Image();
+    img.onload = ()=>{
+      let w=img.width, h=img.height;
+      if(w > maxDim || h > maxDim){
+        if(w>h){ h=Math.round(h*maxDim/w); w=maxDim; }
+        else { w=Math.round(w*maxDim/h); h=maxDim; }
+      }
+      const c=document.createElement('canvas');
+      c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      resolve(c.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror=()=>resolve(dataUrl);
+    img.src=dataUrl;
+  });
+}
+
+async function saveFaceRef(){
+  if(!faceEnrollUid){ showToast('UID user tidak ditemukan','error'); return; }
+  if(!faceEnrollPhotoData){ showToast('Belum ada foto yang dipilih','error'); return; }
+  if(!firebaseDb){ showToast('Firebase belum terhubung','error'); return; }
+
+  // Validasi ukuran — faceEnrollPhotoData harus sudah berupa thumbnail kecil
+  // Jika entah bagaimana masih besar, kompres ulang sekali lagi sebagai safety net
+  let safeThumb = faceEnrollPhotoData;
+  if(safeThumb.length > 20000){ // > ~15KB berarti masih terlalu besar
+    safeThumb = await _makeThumb(faceEnrollPhotoData, 80, 80);
+  }
+
+  // Pastikan BENAR-BENAR di bawah 50KB sebelum kirim ke Firestore
+  if(safeThumb.length > 65000){
+    showToast('Thumbnail masih terlalu besar. Coba foto lain.', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('btn-save-face-ref');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Menyimpan...';
+
+  try{
+    const updateData = {
+      faceRef: safeThumb,   // thumbnail 80x80 ~3-5KB
+      faceRefUpdatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      faceRefUpdatedBy: currentUser?.name || 'Admin',
+    };
+    if(faceEnrollDescriptor){
+      // Descriptor 128 float ~3KB — aman untuk Firestore
+      updateData.faceDescriptor = Array.from(faceEnrollDescriptor)
+        .reduce((o,v,i)=>{ o[i]=v; return o; }, {});
+    }
+
+    console.log('[FaceEnroll] Menyimpan ke Firestore...',
+      'faceRef size:', safeThumb.length, 'bytes',
+      '| hasDescriptor:', !!faceEnrollDescriptor
+    );
+
+    await firebaseDb.collection('users').doc(faceEnrollUid).update(updateData);
+    showToast('Foto referensi wajah berhasil disimpan!', 'success');
+    const idx = allUsers.findIndex(u => u.uid === faceEnrollUid);
+    if(idx >= 0){
+      allUsers[idx].faceRef = safeThumb;
+      allUsers[idx].faceDescriptor = updateData.faceDescriptor;
+    }
+    renderUserList(filteredUsers.length ? filteredUsers : allUsers);
+    closeFaceEnroll();
+  }catch(e){
+    showToast('Gagal simpan: ' + e.message, 'error');
+    btn.disabled = false;
+    btn.innerHTML = '<i class="fas fa-save"></i> Simpan Referensi';
+  }
+}
+
+// Helper: buat thumbnail dari dataUrl, max w x h px, kualitas rendah
+function _makeThumb(dataUrl, maxW, maxH){
+  return new Promise(resolve=>{
+    const img = new Image();
+    img.onload = ()=>{
+      let w=img.width, h=img.height;
+      if(w>h){ h=Math.round(h*maxW/w); w=maxW; }
+      else { w=Math.round(w*maxH/h); h=maxH; }
+      const c=document.createElement('canvas');
+      c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      resolve(c.toDataURL('image/jpeg', 0.5));
+    };
+    img.onerror=()=>resolve('');
+    img.src=dataUrl;
+  });
 }
 function resetCameraUI(){
   document.getElementById('camera-video').style.display='none';document.getElementById('camera-canvas').style.display='none';
@@ -2230,13 +2678,52 @@ async function submitAbsen(type){
   btns.forEach(b=>{ b.innerHTML='<i class="fas fa-spinner fa-spin"></i> Menyimpan...'; });
   dbgLog('START: '+type+(capturedPhoto?' | foto '+Math.round(capturedPhoto.length/1024)+'KB':' | tanpa foto'));
   try{
+    // ── Tentukan tanggal yang akan disimpan ───────────────────────────
+    // Untuk absen MASUK: selalu gunakan tanggal hari ini
+    // Untuk absen PULANG: cari tanggal absen masuk terakhir yang belum
+    //   ada pasangan pulangnya. Kasus: masuk Senin malam, pulang Selasa
+    //   pagi → data pulang harus tetap tercatat dengan date Senin.
+    let absenDate = getLocalDateStr(now);
+
+    if(type === 'pulang' && firebaseDb && currentUser?.uid){
+      try{
+        const dBatas = new Date(now);
+        dBatas.setDate(dBatas.getDate() - 3);
+        const batasStr = getLocalDateStr(dBatas);
+
+        // Satu query sederhana — tidak butuh composite index
+        const snapRecent = await firebaseDb.collection('absensi')
+          .where('uid','==', currentUser.uid)
+          .where('date','>=', batasStr)
+          .get();
+
+        // Filter & kelompokkan di sisi client
+        const docsAll = snapRecent.docs.map(d => d.data());
+        const masukDocs = docsAll
+          .filter(d => d.type === 'masuk')
+          .sort((a,b) => a.date > b.date ? -1 : a.date < b.date ? 1 : (a.time||'') > (b.time||'') ? -1 : 1);
+        const pulangDates = new Set(docsAll.filter(d => d.type === 'pulang').map(d => d.date));
+
+        for(const doc of masukDocs){
+          if(!pulangDates.has(doc.date)){
+            absenDate = doc.date;
+            dbgLog('[Pulang] Menggunakan tanggal masuk: '+absenDate+' (bukan today: '+getLocalDateStr(now)+')');
+            break;
+          }
+        }
+      }catch(eLookup){
+        dbgLog('[Pulang] Gagal cari tanggal masuk, pakai today: '+eLookup.message);
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────
+
     // Foto untuk absen offline dikompres lebih agresif agar tidak membebani localStorage
     let photoToSave = capturedPhoto;
     if(capturedPhoto && !navigator.onLine){
       photoToSave = await compressPhotoForOffline(capturedPhoto);
     }
     const result = await saveAbsenToFirebase({
-      type, time:t, date:getLocalDateStr(now),
+      type, time:t, date: absenDate,
       lat:currentLocation?.lat, lng:currentLocation?.lng,
       accuracy:currentLocation?.acc,
       fakeGpsScore:currentLocation?.fakeScore||0,
@@ -2247,8 +2734,12 @@ async function submitAbsen(type){
       checkOutMachine: type==='pulang' ? ((selectedCabangData||officeConfig)?.checkOutMachine || CHECKOUT_MACHINE_CODE || null) : null,
       absenceType: (selectedCabangData||officeConfig)?.absenceType || ABSENCE_TYPE_CODE,
       cabangId: selectedCabangData?.id || null,
-      cabangNama: selectedCabangData?.nama || (officeConfig?.nama || 'Kantor Pusat')
+      cabangNama: selectedCabangData?.nama || (officeConfig?.nama || 'Kantor Pusat'),
+      faceWarn: window._faceWarnFlag || false,
+      faceWarnSimilarity: window._faceWarnFlag ? (window._faceWarnSimilarity||null) : null,
     });
+    window._faceWarnFlag = false;
+    window._faceWarnSimilarity = null;
     if(type==='masuk'){document.getElementById('stat-masuk').textContent=t;document.getElementById('today-status').textContent='Sudah Absen Masuk ✓';}
     else{document.getElementById('stat-pulang').textContent=t;document.getElementById('today-status').textContent='Sudah Absen Pulang ✓';}
     closeAbsenModal();
@@ -3523,6 +4014,7 @@ function renderUserList(users){
         <button class="btn-u-edit" onclick="openUserModal('edit','${u.uid}')"><i class="fas fa-pen"></i> Edit</button>
         <button class="btn-u-role" onclick="openRoleModal('${u.uid}','${(u.name||'').replace(/'/g,"\'")}','${u.userRole||'karyawan'}')" ${isSelf(u.uid)?'disabled':''}><i class="fas fa-shield-alt"></i> Role</button>
         <button class="btn-u-del" onclick="openDeleteConfirm('${u.uid}','${(u.name||'').replace(/'/g,"\'")}','${u.email||''}')" ${isSelf(u.uid)?'disabled':''}><i class="fas fa-trash"></i> Hapus</button>
+        <button class="btn-u-face ${u.faceRef?'has-ref':''}" onclick="openFaceEnroll('${u.uid}','${(u.name||'').replace(/'/g,"\\'")}')"><i class="fas fa-face-smile-wink"></i> ${u.faceRef?'✓ Wajah':'Foto Wajah'}</button>
       </div>
     </div>`).join('');
 }
@@ -4903,6 +5395,52 @@ if (!navigator.onLine) document.getElementById('offline-bar').classList.add('sho
         <div style="font-weight:700;margin-bottom:4px"><i class="fas fa-exclamation-triangle" style="margin-right:5px"></i>Peringatan GPS Pulang</div>
         <div id="rekap-gps-warnings-pulang-list"></div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL FACE ENROLLMENT (Admin) -->
+<div id="modal-face-enroll">
+  <div class="face-enroll-box">
+    <div class="face-enroll-hdr">
+      <h3><i class="fas fa-face-smile-wink" style="margin-right:8px"></i>Foto Referensi Wajah</h3>
+      <button onclick="closeFaceEnroll()" style="background:rgba(255,255,255,.2);border:none;color:#fff;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:.85rem;display:flex;align-items:center;justify-content:center"><i class="fas fa-times"></i></button>
+    </div>
+    <div class="face-enroll-body">
+      <div style="font-size:.82rem;font-weight:700;color:var(--text);margin-bottom:4px" id="face-enroll-username">—</div>
+      <div style="font-size:.75rem;color:var(--text-muted);margin-bottom:14px">Foto referensi digunakan untuk verifikasi wajah saat absen. Pastikan wajah terlihat jelas, pencahayaan cukup, dan tidak tertutup masker/kacamata.</div>
+      <div class="face-ref-preview" id="face-ref-preview">
+        <div class="fref-empty" id="fref-empty-msg"><i class="fas fa-user-circle" style="font-size:2.5rem;display:block;margin-bottom:8px;opacity:.4"></i>Belum ada foto referensi</div>
+        <img id="face-ref-img" style="display:none;width:100%;height:100%;object-fit:cover">
+        <canvas id="face-ref-canvas" style="display:none;position:absolute;inset:0;width:100%;height:100%"></canvas>
+      </div>
+      <div id="face-detect-status" style="display:none;font-size:.78rem;font-weight:700;text-align:center;padding:8px 12px;border-radius:8px;margin-bottom:12px"></div>
+      <div style="margin-bottom:12px">
+        <div style="font-size:.75rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.3px;margin-bottom:8px">Upload / Ambil Foto Referensi</div>
+        <div style="display:flex;gap:8px">
+          <label style="flex:1;padding:10px;background:var(--primary-light);border:1.5px solid var(--primary);border-radius:8px;color:var(--primary);font-size:.82rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;font-family:'Plus Jakarta Sans',sans-serif">
+            <i class="fas fa-image"></i> Pilih Foto
+            <input type="file" accept="image/*" id="face-ref-file-input" style="display:none" onchange="handleFaceRefUpload(this)">
+          </label>
+          <label style="flex:1;padding:10px;background:#f0fdfa;border:1.5px solid #0d9488;border-radius:8px;color:#0d9488;font-size:.82rem;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;font-family:'Plus Jakarta Sans',sans-serif">
+            <i class="fas fa-camera"></i> Ambil Kamera
+            <input type="file" accept="image/*" capture="user" id="face-ref-camera-input" style="display:none" onchange="handleFaceRefUpload(this)">
+          </label>
+        </div>
+      </div>
+      <div id="face-enroll-info" style="display:none;background:#f0fdf4;border:1.5px solid #86efac;border-radius:8px;padding:10px 12px;font-size:.78rem;color:#15803d;margin-bottom:12px">
+        <div style="font-weight:700;margin-bottom:3px"><i class="fas fa-check-circle" style="margin-right:5px"></i>Wajah berhasil terdeteksi</div>
+        <div id="face-enroll-info-detail">Descriptor wajah siap disimpan.</div>
+      </div>
+      <div id="face-enroll-fail" style="display:none;background:var(--red-light);border:1.5px solid #fecaca;border-radius:8px;padding:10px 12px;font-size:.78rem;color:var(--red);margin-bottom:12px">
+        <div style="font-weight:700;margin-bottom:3px"><i class="fas fa-exclamation-circle" style="margin-right:5px"></i>Wajah tidak terdeteksi</div>
+        <div>Pastikan wajah terlihat jelas, tidak tertutup, dan pencahayaan cukup. Coba foto lain.</div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:4px">
+        <button onclick="closeFaceEnroll()" style="flex:1;padding:12px;border-radius:10px;border:1.5px solid var(--border);background:var(--card);color:var(--text-muted);font-weight:600;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer">Batal</button>
+        <button id="btn-save-face-ref" onclick="saveFaceRef()" disabled style="flex:1;padding:12px;border-radius:10px;border:none;background:#0891b2;color:#fff;font-weight:700;font-family:'Plus Jakarta Sans',sans-serif;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;opacity:.5"><i class="fas fa-save"></i> Simpan Referensi</button>
+      </div>
+      <div id="face-enroll-model-note" style="font-size:.7rem;color:var(--text-muted);text-align:center;margin-top:10px"><i class="fas fa-spinner fa-spin" style="margin-right:4px"></i>Memuat model AI wajah... (±5 MB, sekali saja)</div>
     </div>
   </div>
 </div>
