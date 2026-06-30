@@ -473,7 +473,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 #session-check.show{display:flex;}
 #session-check p{color:rgba(255,255,255,.8);font-size:.9rem;font-family:'Plus Jakarta Sans',sans-serif;}
 #session-check .brand{font-family:'Syne',sans-serif;font-size:2rem;font-weight:800;color:#fff;letter-spacing:-1px;}
-#session-check .brand span{color:#960b24;}
+#session-check .brand span{color:#f97316;}
 ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:var(--border);border-radius:99px;}
 .tab-content{display:none;}.tab-content.active{display:block;}
 .empty-state{text-align:center;padding:40px 20px;color:var(--text-muted);}
@@ -1693,12 +1693,9 @@ async function doFingerprintVerif(){
 
     if(cred){
       verifMethod='fingerprint';verifDone=true;
-      showVerifStatus('success','✅ Fingerprint terverifikasi! Selfie opsional untuk bukti tambahan.');
+      showVerifStatus('success','✅ Fingerprint terverifikasi! Anda bisa langsung submit absen.');
       btn.innerHTML='<i class="fas fa-check"></i> Terverifikasi';
-      // Aktifkan selfie sebagai foto bukti tambahan (opsional)
-      document.getElementById('verif-selfie-section').style.display='block';
-      document.getElementById('verif-selfie-section').querySelector('div').innerHTML='<i class="fas fa-camera" style="color:#0891b2"></i> <strong style="color:#0891b2">Selfie Bukti (Opsional)</strong> — Ambil foto untuk bukti tambahan absensi';
-      setTimeout(startCamera,400);
+      // Fingerprint sudah cukup — selfie TIDAK ditawarkan lagi (tidak diperlukan)
       const btnSubmit=document.getElementById('btn-submit-absen');
       btnSubmit.disabled=false;btnSubmit.style.opacity='1';
       btnSubmit.style.background='var(--green)';
@@ -1773,7 +1770,22 @@ function switchToFingerprintVerif(){
 
 async function doSubmitAbsen(){
   if(!selectedAbsenType){showToast('Pilih jenis absen dulu','warning');return;}
-  if(!verifDone&&!capturedPhoto){showToast('Selesaikan verifikasi dulu','warning');return;}
+
+  if(verifMethod === 'fingerprint'){
+    // Jalur fingerprint: cukup verifDone=true, foto tidak wajib
+    if(!verifDone){showToast('Verifikasi fingerprint belum selesai','warning');return;}
+  } else {
+    // Jalur selfie (atau belum pilih metode): foto WAJIB + verifikasi wajah WAJIB
+    if(!capturedPhoto){
+      showToast('Foto selfie wajib diambil sebelum submit absen','error');
+      showVerifStatus('error','❌ Selfie wajib! Silakan ambil foto terlebih dahulu.');
+      return;
+    }
+    if(!verifDone){
+      showToast('Verifikasi wajah belum selesai','warning');
+      return;
+    }
+  }
   await submitAbsen(selectedAbsenType);
 }
 function initAbsenMap(){
@@ -2936,6 +2948,16 @@ async function submitIzin(){
   if(btn){btn.innerHTML='<i class="fas fa-paper-plane"></i> Ajukan Ijin';btn.disabled=false;}
 }
 
+// Mapping jenis izin → absenceType code
+const IZIN_ABSENCE_TYPE = {
+  'Sakit'              : 'AT-SB1-0007',
+  'Cuti Tahunan'       : 'AT-SB1-0001',
+  'Cuti Melahirkan'    : 'AT-SB1-0002',
+  'Keperluan Keluarga' : 'AT-SB1-0003',
+  'Dinas Luar'         : 'AT-SB1-0005',
+  'Lainnya'            : 'AT-SB1-0006',
+};
+
 async function approveIzin(docId, action){
   if(!firebaseDb||!hasRole('manager')){showToast('Akses ditolak','error');return;}
   const note=document.getElementById('note-'+docId)?.value?.trim()||'';
@@ -2944,28 +2966,94 @@ async function approveIzin(docId, action){
   if(btn){btn.innerHTML='<i class="fas fa-spinner fa-spin"></i>';btn.disabled=true;}
   try{
     await firebaseDb.collection('izin').doc(docId).set({
-      status:action,
-      note:note,
+      status:action, note:note,
       approvedBy:currentUser?.uid,
       approvedByName:currentUser?.name,
       approvedAt:firebase.firestore.FieldValue.serverTimestamp()
     },{merge:true});
-    // Update local data
-    const idx=allIzinData.findIndex(i=>i.id===docId);
-    if(idx>=0){
-      allIzinData[idx].status=action;
-      allIzinData[idx].note=note;
-      allIzinData[idx].approvedByName=currentUser?.name;
+
+    if(action === 'approved'){
+      // Ambil langsung dari Firestore — jangan andalkan allIzinData di memori
+      const izinDoc = await firebaseDb.collection('izin').doc(docId).get();
+      const izinData = izinDoc.exists ? { id:docId, ...izinDoc.data() } : null;
+      dbgLog('[Izin] data: '+JSON.stringify({jenis:izinData?.jenis,dari:izinData?.dari,sampai:izinData?.sampai,uid:izinData?.uid}));
+
+      if(izinData && izinData.dari && izinData.sampai && izinData.uid){
+        const absType = IZIN_ABSENCE_TYPE[izinData.jenis] || (officeConfig?.absenceType || ABSENCE_TYPE_CODE);
+        dbgLog('[Izin] absType: '+absType);
+        const errors = [];
+        let buatCount = 0;
+
+        const dStart = new Date(izinData.dari + 'T00:00:00');
+        const dEnd   = new Date(izinData.sampai + 'T00:00:00');
+
+        // Ambil semua absensi user 1x (tidak butuh index)
+        const snapCek = await firebaseDb.collection('absensi').where('uid','==', izinData.uid).get();
+        const absensiSet = new Set(
+          snapCek.docs.map(d=>d.data()).filter(r=>r.type==='masuk'||r.izinAutoFill).map(r=>r.date)
+        );
+        dbgLog('[Izin] tanggal sudah ada absensi: '+JSON.stringify([...absensiSet]));
+
+        for(let d = new Date(dStart); d <= dEnd; d.setDate(d.getDate()+1)){
+          const dateStr = getLocalDateStr(d);
+          if(!absensiSet.has(dateStr)){
+            try{
+              await firebaseDb.collection('absensi').add({
+                uid          : izinData.uid,
+                userName     : izinData.userName || '',
+                date         : dateStr,
+                type         : 'masuk',       // tetap 'masuk' agar muncul di laporan
+                time         : null,          // jam masuk null — bukan absen hadir biasa
+                timePulang   : null,          // jam pulang null
+                checkInMachine : null,        // mesin in null
+                checkOutMachine: null,        // mesin out null
+                lat          : null,
+                lng          : null,
+                accuracy     : null,
+                absenceType  : absType,
+                izinAutoFill : true,
+                izinId       : docId,
+                izinJenis    : izinData.jenis,
+                cabangNama   : officeConfig?.nama || 'Kantor Pusat',
+                fakeGpsScore : 0,
+                gpsWarnings  : [],
+                createdAt    : firebase.firestore.FieldValue.serverTimestamp(),
+              });
+              buatCount++;
+              dbgLog('[Izin] ✓ dibuat: '+dateStr);
+            }catch(eDate){
+              errors.push(dateStr);
+              dbgLog('[Izin] ✗ gagal: '+dateStr+' — '+eDate.message);
+            }
+          } else {
+            dbgLog('[Izin] skip (sudah ada): '+dateStr);
+          }
+        }
+        if(errors.length){
+          showToast('Izin disetujui, gagal isi absensi tgl: '+errors.join(', '),'warning');
+        } else {
+          showToast('Izin disetujui! '+buatCount+' absensi '+izinData.jenis+' ('+absType+') otomatis dibuat.','success');
+        }
+      } else {
+        dbgLog('[Izin] SKIP: data tidak lengkap');
+        showToast('Pengajuan disetujui!','success');
+      }
+    } else {
+      showToast('Pengajuan ditolak','warning');
     }
+
+    const idx=allIzinData.findIndex(i=>i.id===docId);
+    if(idx>=0){allIzinData[idx].status=action;allIzinData[idx].note=note;allIzinData[idx].approvedByName=currentUser?.name;}
     filteredIzinData=filteredIzinData.map(i=>i.id===docId?{...i,status:action,note,approvedByName:currentUser?.name}:i);
     renderIzinHistory(filteredIzinData,true);
-    const label=action==='approved'?'Pengajuan disetujui':'Pengajuan ditolak';
-    showToast(label+'!',action==='approved'?'success':'warning');
-    // Update badge count
     const pendingCount=allIzinData.filter(i=>i.status==='pending').length;
-    document.getElementById('izin-list-label').textContent=
-      'Semua Pengajuan'+(pendingCount>0?' · '+pendingCount+' menunggu':'');
-  }catch(e){showToast('Gagal: '+e.message,'error');if(btn){btn.innerHTML=action==='approved'?'<i class="fas fa-check"></i> Setujui':'<i class="fas fa-times"></i> Tolak';btn.disabled=false;}}}
+    document.getElementById('izin-list-label').textContent='Semua Pengajuan'+(pendingCount>0?' · '+pendingCount+' menunggu':'');
+  }catch(e){
+    dbgLog('[Izin] ERROR: '+e.message);
+    showToast('Gagal: '+e.message,'error');
+    if(btn){btn.innerHTML=action==='approved'?'<i class="fas fa-check"></i> Setujui':'<i class="fas fa-times"></i> Tolak';btn.disabled=false;}
+  }
+}
 
 
 // LAPORAN
@@ -3053,15 +3141,16 @@ function renderLaporanTable(data){
   const grouped={};
   filtered.forEach(r=>{
     const key=(r.uid||'x')+'|'+(r.date||'');
-    if(!grouped[key]) grouped[key]={uid:r.uid,name:r.userName||'—',date:r.date,masuk:'—',pulang:'—',lat:null,lng:null,photoMasuk:null,photoPulang:null,accMasuk:null,fakeScoreMasuk:0,latPulang:null,lngPulang:null,accPulang:null,fakeScorePulang:0,gpsWarnings:[],gpsWarningsPulang:[]};
+    if(!grouped[key]) grouped[key]={uid:r.uid,name:r.userName||'—',date:r.date,masuk:'—',pulang:'—',lat:null,lng:null,photoMasuk:null,photoPulang:null,accMasuk:null,fakeScoreMasuk:0,latPulang:null,lngPulang:null,accPulang:null,fakeScorePulang:0,gpsWarnings:[],gpsWarningsPulang:[],izinAutoFill:false,izinJenis:null,absenceType:null};
     if(r.type==='masuk'){
-      grouped[key].masuk=r.time;
+      grouped[key].masuk = r.time || '—';
       grouped[key].lat=r.lat; grouped[key].lng=r.lng;
       grouped[key].accMasuk=r.accuracy;
       grouped[key].photoMasuk=r.photoURL||r.photoBase64||null;
       grouped[key].fakeScoreMasuk=r.fakeGpsScore||0;
       grouped[key].gpsWarnings=r.gpsWarnings||[];
       grouped[key].docIdMasuk=r.id;
+      if(r.izinAutoFill){ grouped[key].izinAutoFill=true; grouped[key].izinJenis=r.izinJenis||null; grouped[key].absenceType=r.absenceType||null; }
     }
     if(r.type==='pulang'){
       grouped[key].pulang=r.time;
@@ -3090,23 +3179,31 @@ function renderLaporanTable(data){
     const d=new Date(r.date||'');
     const tgl=isNaN(d)?r.date:d.getDate()+' '+M[d.getMonth()]+' '+d.getFullYear();
     let dur='—';
-    if(r.masuk!=='—'&&r.pulang!=='—'){
+    if(!r.izinAutoFill && r.masuk!=='—'&&r.pulang!=='—'){
       const[mh,mm]=r.masuk.split(':').map(Number),[ph,pm]=r.pulang.split(':').map(Number),mn=(ph*60+pm)-(mh*60+mm);
       if(mn>0) dur=Math.floor(mn/60)+'j '+(mn%60)+'m';
     }
-    const t = r.masuk!=='—' ? hitungTelat(r.masuk, r.uid, r.date) : null;
-    const telatBadge = !t ? '—'
+    // Baris izin: tidak dihitung telat, tidak ada shift
+    const t = (!r.izinAutoFill && r.masuk!=='—') ? hitungTelat(r.masuk, r.uid, r.date) : null;
+    const telatBadge = r.izinAutoFill ? '—'
+      : !t ? '—'
       : t.telat
         ? '<span class="status-badge badge-telat" style="background:#fee2e2;color:#dc2626">+'+t.display+'</span>'
         : '<span class="status-badge" style="background:#dcfce7;color:#16a34a">Tepat Waktu</span>';
-    const st = r.masuk==='—'
-      ? '<span class="status-badge badge-absen">Tidak Hadir</span>'
-      : r.pulang==='—'
-        ? '<span class="status-badge badge-telat" style="background:#fef9c3;color:#ca8a04">Belum Pulang</span>'
-        : '<span class="status-badge badge-hadir">Hadir</span>';
-    const shiftNama = t ? t.shiftNama : '—';
-    const batasMasuk = t ? t.batas : '—';
-    // Tombol bukti foto & lokasi
+    const st = r.izinAutoFill
+      ? `<span class="status-badge" style="background:#f5f3ff;color:#7c3aed;border:1px solid #ddd6fe" title="${r.absenceType||''}"><i class="fas fa-file-medical" style="margin-right:3px"></i>${r.izinJenis||'Izin'}</span>`
+      : r.masuk==='—'
+        ? '<span class="status-badge badge-absen">Tidak Hadir</span>'
+        : r.pulang==='—'
+          ? '<span class="status-badge badge-telat" style="background:#fef9c3;color:#ca8a04">Belum Pulang</span>'
+          : '<span class="status-badge badge-hadir">Hadir</span>';
+    const shiftNama = r.izinAutoFill ? '—' : (t ? t.shiftNama : '—');
+    const batasMasuk = r.izinAutoFill ? '—' : (t ? t.batas : '—');
+    // Jam masuk: jika izin tampilkan kode absenceType, bukan jam
+    const masukDisplay = r.izinAutoFill
+      ? '<span style="font-size:.68rem;color:#7c3aed;font-weight:700">'+( r.absenceType||'—')+'</span>'
+      : r.masuk;
+    // Tombol bukti foto & lokasi (izin tidak punya)
     const hasPhoto = r.photoMasuk || r.photoPulang;
     const hasLoc = r.lat && r.lng;
     const fakeScore = r.fakeScoreMasuk||0;
@@ -3117,8 +3214,8 @@ function renderLaporanTable(data){
         : '';
     const safeUid=r.uid?r.uid.replace(/'/g,''):'';
     const safeDate=r.date?r.date.replace(/'/g,''):'';
-    const buktiHtml =
-      (hasPhoto ? '<button class="rekap-foto-btn" onclick="lihatDetail(this)" data-uid="'+safeUid+'" data-date="'+safeDate+'" data-tab="masuk"><i class="fas fa-camera"></i> Foto</button> ' : '')
+    const buktiHtml = r.izinAutoFill ? '<span style="color:var(--text-muted);font-size:.72rem">—</span>'
+      : (hasPhoto ? '<button class="rekap-foto-btn" onclick="lihatDetail(this)" data-uid="'+safeUid+'" data-date="'+safeDate+'" data-tab="masuk"><i class="fas fa-camera"></i> Foto</button> ' : '')
       +(hasLoc ? '<button class="rekap-map-btn" onclick="lihatDetail(this)" data-uid="'+safeUid+'" data-date="'+safeDate+'" data-tab="lokasi"><i class="fas fa-map-marker-alt"></i> Peta</button>' : '')
       +(fakeLabel ? '<br><div style="margin-top:3px">'+fakeLabel+'</div>' : '')
       ||'<span style="color:var(--text-muted);font-size:.72rem">—</span>';
@@ -3128,9 +3225,9 @@ function renderLaporanTable(data){
       +'<td style="white-space:nowrap">'+tgl+'</td>'
       +'<td style="font-size:.72rem;color:var(--text-muted)">'+shiftNama+'</td>'
       +'<td style="font-size:.75rem;color:var(--text-muted)">'+batasMasuk+'</td>'
-      +'<td style="color:var(--green);font-weight:600">'+r.masuk+'</td>'
+      +'<td style="color:var(--green);font-weight:600">'+masukDisplay+'</td>'
       +'<td>'+telatBadge+'</td>'
-      +'<td style="color:var(--accent);font-weight:600">'+r.pulang+'</td>'
+      +'<td style="color:var(--accent);font-weight:600">'+(r.izinAutoFill?'—':r.pulang)+'</td>'
       +'<td>'+dur+'</td>'
       +'<td>'+st+'</td>'
       +'<td style="min-width:80px">'+buktiHtml+'</td>'
