@@ -3207,7 +3207,8 @@ function renderLaporanTable(data){
       ? '<span style="font-size:.68rem;color:#7c3aed;font-weight:700">'+( r.absenceType||'—')+'</span>'
       : r.masuk;
     // Tombol bukti foto & lokasi (izin tidak punya)
-    const hasPhoto = r.photoMasuk || r.photoPulang;
+    const hasPhotoMasuk = !!r.photoMasuk;
+    const hasPhotoPulang = !!r.photoPulang;
     const hasLoc = r.lat && r.lng;
     const fakeScore = r.fakeScoreMasuk||0;
     const fakeLabel = fakeScore>=4
@@ -3219,15 +3220,28 @@ function renderLaporanTable(data){
     const safeDate=r.date?r.date.replace(/'/g,''):'';
     const fpMasuk = r.verifMethodMasuk==='fingerprint';
     const fpPulang = r.verifMethodPulang==='fingerprint';
-    const fpBadge = (fpMasuk||fpPulang)
-      ? '<span style="padding:3px 7px;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:5px;color:#0369a1;font-size:.65rem;font-weight:700;display:inline-flex;align-items:center;gap:3px"><i class="fas fa-fingerprint"></i> Fingerprint'+(fpMasuk&&fpPulang?' (Masuk+Pulang)':fpMasuk?' (Masuk)':' (Pulang)')+'</span>'
-      : '';
+
+    // Badge bukti MASUK: foto atau fingerprint, render terpisah dari pulang
+    const buktiMasuk = hasPhotoMasuk
+      ? '<button class="rekap-foto-btn" onclick="lihatDetail(this)" data-uid="'+safeUid+'" data-date="'+safeDate+'" data-tab="masuk"><i class="fas fa-camera"></i> Foto Masuk</button>'
+      : fpMasuk
+        ? '<span style="padding:3px 7px;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:5px;color:#0369a1;font-size:.65rem;font-weight:700;display:inline-flex;align-items:center;gap:3px"><i class="fas fa-fingerprint"></i> Fingerprint Masuk</span>'
+        : '';
+    // Badge bukti PULANG: foto atau fingerprint, render terpisah dari masuk
+    const buktiPulang = hasPhotoPulang
+      ? '<button class="rekap-foto-btn" onclick="lihatDetail(this)" data-uid="'+safeUid+'" data-date="'+safeDate+'" data-tab="pulang"><i class="fas fa-camera"></i> Foto Pulang</button>'
+      : fpPulang
+        ? '<span style="padding:3px 7px;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:5px;color:#0369a1;font-size:.65rem;font-weight:700;display:inline-flex;align-items:center;gap:3px"><i class="fas fa-fingerprint"></i> Fingerprint Pulang</span>'
+        : '';
+
     const buktiHtml = r.izinAutoFill ? '<span style="color:var(--text-muted);font-size:.72rem">—</span>'
-      : (hasPhoto ? '<button class="rekap-foto-btn" onclick="lihatDetail(this)" data-uid="'+safeUid+'" data-date="'+safeDate+'" data-tab="masuk"><i class="fas fa-camera"></i> Foto</button> ' : '')
-      +(hasLoc ? '<button class="rekap-map-btn" onclick="lihatDetail(this)" data-uid="'+safeUid+'" data-date="'+safeDate+'" data-tab="lokasi"><i class="fas fa-map-marker-alt"></i> Peta</button>' : '')
-      +(fpBadge ? '<br><div style="margin-top:3px">'+fpBadge+'</div>' : '')
-      +(fakeLabel ? '<br><div style="margin-top:3px">'+fakeLabel+'</div>' : '')
-      ||'<span style="color:var(--text-muted);font-size:.72rem">—</span>';
+      : [
+          buktiMasuk,
+          buktiPulang,
+          hasLoc ? '<button class="rekap-map-btn" onclick="lihatDetail(this)" data-uid="'+safeUid+'" data-date="'+safeDate+'" data-tab="lokasi"><i class="fas fa-map-marker-alt"></i> Peta</button>' : '',
+          fakeLabel
+        ].filter(Boolean).join('<br>')
+      || '<span style="color:var(--text-muted);font-size:.72rem">—</span>';
     return '<tr>'
       +'<td>'+( i+1)+'</td>'
       +'<td style="font-weight:600;white-space:nowrap">'+r.name+'</td>'
